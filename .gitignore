@@ -15,3 +15,10 @@ Cargo.lock
 /target
 
 peers.dump
+
+
+# Added by cargo
+#
+# already existing elements were commented out
+
+#/target
