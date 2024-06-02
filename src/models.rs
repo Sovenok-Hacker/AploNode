@@ -24,12 +24,35 @@ pub mod responses {
     pub struct Pong {}
 }
 
-pub mod peers {
+pub mod config {
     use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
     use std::net::SocketAddr;
+    use std::path::PathBuf;
 
     #[derive(Deserialize, Serialize, Clone)]
     pub struct PeersFile {
         pub peers: Vec<SocketAddr>,
+        pub domain_peers: Vec<String>,
+    }
+
+    #[inline]
+    fn default_logs() -> PathBuf {
+        PathBuf::from("./logs")
+    }
+
+    #[derive(Deserialize, Serialize, Clone, Debug)]
+    pub struct LogConfig {
+        pub global_directive: Option<String>,
+        pub directives: Option<HashMap<String, String>>,
+
+        #[serde(default = "default_logs")]
+        pub logs_dir: PathBuf,
+    }
+
+    #[derive(Deserialize, Serialize, Clone, Debug)]
+    pub struct Config {
+        pub server_addr: SocketAddr,
+        pub log_config: LogConfig,
     }
 }

@@ -11,6 +11,7 @@ use crate::manager::Manager;
 
 pub struct Node {
     peers: Arc<RwLock<HashSet<SocketAddr>>>,
+    domain_peers: Arc<RwLock<HashSet<String>>>,
     manager: Manager,
 }
 
@@ -18,6 +19,7 @@ impl Node {
     pub fn new() -> Self {
         Node {
             peers: Default::default(),
+            domain_peers: Default::default(),
             manager: Manager::new(),
         }
     }
@@ -25,7 +27,7 @@ impl Node {
     pub fn load_peers(&mut self, peers_file: String) -> Result<(), Errors> {
         let file_content = fs::read_to_string(peers_file)?;
 
-        let peers: models::peers::PeersFile = serde_json::from_str(&file_content)?;
+        let peers: models::config::PeersFile = serde_json::from_str(&file_content)?;
 
         let mut peers_locked = self.peers.write().unwrap();
         for peer in peers.peers {
@@ -36,10 +38,13 @@ impl Node {
 
     pub async fn store_peers(&self, peers_file: String) -> Result<(), Errors> {
         let peers_locked = self.peers.read().unwrap();
-        let peers = serde_json::to_string(&models::peers::PeersFile {
+        let domain_peers = self.domain_peers.read().unwrap();
+        let peers = serde_json::to_string(&models::config::PeersFile {
             peers: peers_locked.iter().cloned().collect(),
+            domain_peers: domain_peers.iter().cloned().collect(),
         })?;
         drop(peers_locked);
+        drop(domain_peers);
 
         let mut file = asyncfs::File::open(peers_file).await?;
 
