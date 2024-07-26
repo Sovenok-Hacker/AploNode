@@ -1,38 +1,62 @@
-mod errors;
-mod log;
-mod manager;
-mod models;
-mod node;
-use std::fs;
-use tracing::{debug, error, info, warn};
+use alloy_primitives::hex::FromHex as _;
+use futures::StreamExt;
+use once_cell::sync::Lazy;
+use reth_discv4::NodeRecord;
 
-use clap::Parser;
+use alloy_primitives::B512;
+use reth_discv4::{DiscoveryUpdate, Discv4, Discv4ConfigBuilder, DEFAULT_DISCOVERY_ADDRESS};
+use secp256k1::SecretKey;
+use std::time::Duration;
 
-/// Aplo coin node
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    /// Path to the file with config
-    #[arg(short, long, default_value = "config.conf")]
-    config_file: String,
+use std::str::FromStr;
+
+mod config_env;
+mod utils;
+use crate::config_env::*;
+
+fn mainnet_nodes_test() -> Vec<NodeRecord> {
+    if BOOT_NODE_IP.is_some()
+        && BOOT_NODE_TCP_PORT.is_some()
+        && BOOT_NODE_ID.is_some()
+        && BOOT_NODE_UDP_PORT.is_some()
+    {
+        vec![NodeRecord {
+            address: BOOT_NODE_IP.unwrap(),
+            tcp_port: BOOT_NODE_TCP_PORT.unwrap(),
+            udp_port: BOOT_NODE_UDP_PORT.unwrap(),
+            id: B512::from_hex(BOOT_NODE_ID.as_ref().unwrap()).unwrap(),
+        }]
+    } else {
+        Vec::with_capacity(0)
+    }
 }
 
-fn load_config(config_path: &str) -> models::config::Config {
-    let file_content = fs::read_to_string(config_path).unwrap();
-
-    serde_json::from_str::<models::config::Config>(&file_content).unwrap()
-}
+pub static MAINNET_BOOT_NODES: Lazy<Vec<NodeRecord>> = Lazy::new(mainnet_nodes_test);
 
 #[tokio::main]
-async fn main() {
-    let args = Args::parse();
+async fn main() -> eyre::Result<()> {
+    print_config();
+    let our_key = SecretKey::from_str(&PRIVATE_KEY).unwrap();
+    let our_enr = NodeRecord::from_secret_key(DEFAULT_DISCOVERY_ADDRESS, &our_key);
 
-    let config = load_config(&args.config_file);
+    let mut discv4_cfg = Discv4ConfigBuilder::default();
+    discv4_cfg
+        .add_boot_nodes(MAINNET_BOOT_NODES.clone())
+        .lookup_interval(Duration::from_secs(1));
 
-    log::init_logger(&config.log_config);
+    let discv4 = Discv4::spawn(our_enr.udp_addr(), our_enr, our_key, discv4_cfg.build()).await?;
+    let mut discv4_stream = discv4.update_stream().await?;
 
-    debug!(
-        "Logger initialization completed \n {:?} \n {:?}",
-        &args, &config
-    );
+    while let Some(update) = discv4_stream.next().await {
+        tokio::spawn(async move {
+            if let DiscoveryUpdate::Added(peer) = update {
+                println!("New node: {:?}", peer);
+                if MAINNET_BOOT_NODES.contains(&peer) {
+                    return;
+                }
+            }
+        });
+    }
+
+    Ok(())
 }

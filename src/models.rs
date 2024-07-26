@@ -1,28 +1,5 @@
 use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize, Serialize, Clone)]
-pub struct Message {
-    pub q: u8, // 0 - request, 1 - response
-    #[serde(rename = "type")]
-    pub body_type: u8,
-    pub id: u32,
-    pub body: rmpv::Value,
-}
-
-pub mod requests {
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Deserialize, Serialize, Clone)]
-    pub struct Ping {}
-}
-
-pub mod responses {
-
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Deserialize, Serialize, Clone)]
-    pub struct Pong {}
-}
+use serde_repr::*;
 
 pub mod config {
     use serde::{Deserialize, Serialize};
@@ -54,5 +31,36 @@ pub mod config {
     pub struct Config {
         pub server_addr: SocketAddr,
         pub log_config: LogConfig,
+    }
+}
+
+pub mod discovery {
+    use std::net::SocketAddr;
+
+    use super::*;
+    use serde_repr::{Deserialize_repr, Serialize_repr};
+
+    #[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug, Clone)]
+    #[repr(u8)]
+    pub enum DiscMessageType {
+        RequestPeers,
+        Ping,
+        Announce,
+    }
+
+    #[derive(Deserialize, Serialize, Clone)]
+    pub struct DiscMessage {
+        pub r#type: DiscMessageType,
+        pub version: u8,
+
+        #[serde(with = "serde_bytes")]
+        pub body: Vec<u8>,
+    }
+
+    #[derive(Deserialize, Serialize, Clone)]
+    pub struct DiscAnnounce {
+        pub address: SocketAddr,
+        pub tcp_port: u16,
+        pub udp_port: u16,
     }
 }
