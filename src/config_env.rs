@@ -1,9 +1,18 @@
 use crate::utils::rng_secret_key;
 use lazy_static::lazy_static;
+use serde::{Deserialize, Serialize};
 use std::{
     env::var,
     net::{IpAddr, Ipv4Addr},
 };
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct NodeFileRecord {
+    pub ip: IpAddr,
+    pub tcp_port: u16,
+    pub udp_port: u16,
+    pub id: String,
+}
 
 lazy_static! {
     pub static ref PRIVATE_KEY: String = match var("PRIVATE_KEY") {
@@ -36,12 +45,4 @@ lazy_static! {
             None
         }
     };
-}
-
-pub fn print_config() {
-    println!("PRIVATE_KEY: {}", *PRIVATE_KEY);
-    println!("BOOT_NODE_IP: {:?}", *BOOT_NODE_IP);
-    println!("BOOT_NODE_TCP_PORT: {:?}", *BOOT_NODE_TCP_PORT);
-    println!("BOOT_NODE_UDP_PORT: {:?}", *BOOT_NODE_UDP_PORT);
-    println!("BOOT_NODE_ID: {:?}", *BOOT_NODE_ID);
 }
