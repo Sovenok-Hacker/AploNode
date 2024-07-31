@@ -16,6 +16,10 @@ use std::str::FromStr;
 mod config_env;
 mod utils;
 use crate::config_env::*;
+mod codec;
+mod manager;
+mod models;
+mod node;
 
 /// Aplo node
 #[derive(Parser, Debug)]

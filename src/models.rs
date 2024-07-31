@@ -34,33 +34,33 @@ pub mod config {
     }
 }
 
-pub mod discovery {
-    use std::net::SocketAddr;
+#[derive(Deserialize, Serialize, Clone, Debug)]
+#[serde(tag = "q", content = "data")]
+pub enum Packet {
+    #[serde(rename = "t")]
+    Request(requests::Request),
 
+    #[serde(rename = "r")]
+    Response(),
+}
+
+pub mod requests {
     use super::*;
-    use serde_repr::{Deserialize_repr, Serialize_repr};
 
-    #[derive(Serialize_repr, Deserialize_repr, PartialEq, Debug, Clone)]
-    #[repr(u8)]
-    pub enum DiscMessageType {
-        RequestPeers,
-        Ping,
-        Announce,
-    }
-
-    #[derive(Deserialize, Serialize, Clone)]
-    pub struct DiscMessage {
-        pub r#type: DiscMessageType,
-        pub version: u8,
-
-        #[serde(with = "serde_bytes")]
-        pub body: Vec<u8>,
-    }
-
-    #[derive(Deserialize, Serialize, Clone)]
-    pub struct DiscAnnounce {
-        pub address: SocketAddr,
-        pub tcp_port: u16,
-        pub udp_port: u16,
+    #[derive(Deserialize, Serialize, Clone, Debug)]
+    #[serde(tag = "t", content = "data")]
+    pub enum Request {
+        #[serde(rename = "1")]
+        Ping { id: u32 },
+        #[serde(rename = "2")]
+        GetBlock(),
+        #[serde(rename = "3")]
+        GetTransaction(),
+        #[serde(rename = "4")]
+        GetBlockTransactions(),
+        #[serde(rename = "5")]
+        LatestBlock(),
     }
 }
+
+pub mod responses {}
