@@ -11,8 +11,11 @@ use reth_discv4::{DiscoveryUpdate, Discv4, Discv4ConfigBuilder, DEFAULT_DISCOVER
 use secp256k1::SecretKey;
 use std::collections::HashSet;
 use std::fs;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::mpsc::unbounded_channel;
+use tokio_util::sync::CancellationToken;
 
 use std::str::FromStr;
 
@@ -60,7 +63,12 @@ static BOOT_NODES_DICT: Lazy<HashSet<NodeRecord>> =
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     let blockchain = Arc::new(BlockChainTree::new("./BlockChainTree").unwrap());
-    let node = Node::new(blockchain.clone(), Duration::from_secs(10));
+    let mut stop = CancellationToken::new();
+    let node = Node::new(blockchain.clone(), Duration::from_secs(10), stop);
+
+    let (peers_tx, mut peers_rx) = unbounded_channel::<SocketAddr>();
+
+    tokio::spawn(node.start(peers_rx, 33533));
 
     let our_key = SecretKey::from_str(&PRIVATE_KEY).unwrap();
     let our_enr = NodeRecord::from_secret_key(DEFAULT_DISCOVERY_ADDRESS, &our_key);

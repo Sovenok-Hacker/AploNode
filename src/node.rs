@@ -30,12 +30,16 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(blockchain: Arc<BlockChainTree>, timeout: Duration) -> Self {
+    pub fn new(
+        blockchain: Arc<BlockChainTree>,
+        timeout: Duration,
+        stop: CancellationToken,
+    ) -> Self {
         Self {
             blockchaintree: blockchain,
             tx_pool: Arc::new(RwLock::new(TxPool::new())),
             connected: Default::default(),
-            stop: CancellationToken::new(),
+            stop,
             timeout,
         }
     }
