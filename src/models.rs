@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_repr::*;
 
+use self::responses::Response;
+
 pub mod config {
     use serde::{Deserialize, Serialize};
     use std::collections::HashMap;
@@ -41,7 +43,7 @@ pub enum Packet {
     Request(requests::Request),
 
     #[serde(rename = "r")]
-    Response(),
+    Response(Response),
 }
 
 pub mod requests {
@@ -63,4 +65,21 @@ pub mod requests {
     }
 }
 
-pub mod responses {}
+pub mod responses {
+    use super::*;
+
+    #[derive(Deserialize, Serialize, Clone, Debug)]
+    #[serde(tag = "t", content = "data")]
+    pub enum Response {
+        #[serde(rename = "1")]
+        Ping { id: u32 },
+        #[serde(rename = "2")]
+        GetBlock(),
+        #[serde(rename = "3")]
+        GetTransaction(),
+        #[serde(rename = "4")]
+        GetBlockTransactions(),
+        #[serde(rename = "5")]
+        LatestBlock(),
+    }
+}

@@ -2,7 +2,7 @@ use crate::models;
 use tokio_util::bytes::{Buf, BytesMut};
 use tokio_util::codec::{Decoder, Encoder};
 
-struct PacketDecoder {}
+pub struct PacketDecoder {}
 
 const MAX: usize = 8 * 1024 * 1024;
 
@@ -42,7 +42,7 @@ impl Decoder for PacketDecoder {
     }
 }
 
-struct PacketEncoder {}
+pub struct PacketEncoder {}
 
 impl Encoder<models::Packet> for PacketEncoder {
     type Error = std::io::Error;

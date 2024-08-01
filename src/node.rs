@@ -1,15 +1,22 @@
 use std::net::{IpAddr, Ipv4Addr};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 
+use crate::codec;
+use crate::models::requests::Request;
+use crate::models::responses::Response;
+use crate::models::{requests, Packet};
 use blockchaintree::blockchaintree::BlockChainTree;
 use eyre::eyre;
 use eyre::Result;
+use futures::{SinkExt as _, StreamExt};
 use std::sync::atomic::AtomicBool;
+use tokio::net::tcp::{OwnedReadHalf, ReadHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::RwLock;
+use tokio_util::codec::{FramedRead, FramedWrite};
 use tokio_util::sync::CancellationToken;
 use txpool::TxPool;
 
@@ -80,6 +87,7 @@ impl Node {
             };
 
             let self_cloned = self.clone();
+            tokio::spawn(async move { self_cloned.peer_handler(socket, address) });
         }
         Ok(())
     }
@@ -102,14 +110,94 @@ impl Node {
                 }
                 _ = tokio::time::sleep(self.timeout) => {
                     Ok(())
+                }
         }
+    }
+
+    async fn read_packets(
+        packets_sender: UnboundedSender<Packet>,
+        mut reader: FramedRead<OwnedReadHalf, codec::PacketDecoder>,
+        timeout: Duration,
+        stop: CancellationToken,
+    ) -> Result<()> {
+        loop {
+            let packet = select! {
+                _ = tokio::time::sleep(timeout) => {
+                    break;
+                }
+                _ = stop.cancelled() => {
+                    break;
+                }
+                packet = reader.next() => {
+                    if let Some(Ok(packet)) = packet{
+                        packet
+                    }else{
+                        break;
+                    }
+                }
+            };
+
+            if let Err(_) = packets_sender.send(packet) {
+                break;
+            };
         }
+        Ok(())
     }
 
     pub async fn peer_handler(self, socket: TcpStream, address: SocketAddr) -> Result<()> {
         if !self.connected.write().await.insert(address) {
             return Ok(());
         }
-        todo!()
+
+        let (read, write) = socket.into_split();
+        let mut writer = FramedWrite::new(write, codec::PacketEncoder {});
+        let reader = FramedRead::new(read, codec::PacketDecoder {});
+
+        let (packet_tx, mut packet_rx) = unbounded_channel();
+
+        let stop_token_clone = self.stop.clone();
+        tokio::spawn(async move {
+            Node::read_packets(packet_tx, reader, self.timeout, stop_token_clone)
+        });
+
+        writer
+            .send(Packet::Request(Request::Ping { id: 0 }))
+            .await?;
+        loop {
+            let packet = select! {
+                _ = tokio::time::sleep(self.timeout) => {
+                    writer
+                        .send(Packet::Request(Request::Ping { id: 0 }))
+                        .await?;
+                    continue;
+                }
+                _ = self.stop.cancelled() => {
+                    break;
+                }
+                packet = packet_rx.recv() => {
+                    if let Some(packet) = packet {
+                        packet
+                    }else{
+                        break;
+                    }
+                }
+            };
+
+            match packet {
+                Packet::Request(r) => match r {
+                    Request::Ping { id } => {
+                        writer.send(Packet::Response(Response::Ping { id })).await?;
+                        println!("Recieved ping packet, sending ping ack back");
+                    }
+                    Request::GetBlock() => todo!(),
+                    Request::GetTransaction() => todo!(),
+                    Request::GetBlockTransactions() => todo!(),
+                    Request::LatestBlock() => todo!(),
+                },
+                Packet::Response(_) => todo!(),
+            }
+        }
+
+        Ok(())
     }
 }
