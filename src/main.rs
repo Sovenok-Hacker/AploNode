@@ -8,10 +8,10 @@ use reth_discv4::NodeRecord;
 use alloy_primitives::B512;
 use clap::Parser;
 use reth_discv4::{DiscoveryUpdate, Discv4, Discv4ConfigBuilder, DEFAULT_DISCOVERY_ADDRESS};
-use secp256k1::SecretKey;
+use secp256k1::{generate_keypair, rand, SecretKey};
 use std::collections::HashSet;
 use std::fs;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::unbounded_channel;
@@ -36,8 +36,20 @@ struct Args {
     private_key: Option<String>,
 
     /// Path to the file with boot nodes
-    #[arg(short, long, default_value = "boot.nodes")]
+    #[arg(short, long, default_value = "boot_nodes.json")]
     boot_nodes: String,
+
+    /// Path to the file with boot nodes
+    #[arg(short, long, default_value = "33533")]
+    udp_port: u16,
+
+    /// Path to the file with boot nodes
+    #[arg(short, long, default_value = "33533")]
+    tcp_port: u16,
+
+    /// Path to the file with boot nodes
+    #[arg(short, long)]
+    ip_address: String,
 }
 
 fn read_boot_nodes(args: &Args) -> Vec<NodeRecord> {
@@ -62,35 +74,67 @@ static BOOT_NODES_DICT: Lazy<HashSet<NodeRecord>> =
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    println!("loading blockchain");
     let blockchain = Arc::new(BlockChainTree::new("./BlockChainTree").unwrap());
     let mut stop = CancellationToken::new();
-    let node = Node::new(blockchain.clone(), Duration::from_secs(10), stop);
+    println!("creating node");
+    let node = Node::new(
+        blockchain.clone(),
+        Duration::from_secs(10),
+        stop,
+        ARGS.ip_address.parse().unwrap(),
+    );
 
-    let (peers_tx, mut peers_rx) = unbounded_channel::<SocketAddr>();
+    let (peers_tx, peers_rx) = unbounded_channel::<SocketAddr>();
 
-    tokio::spawn(node.start(peers_rx, 33533));
+    tokio::spawn(node.start(peers_rx, ARGS.tcp_port));
 
-    let our_key = SecretKey::from_str(&PRIVATE_KEY).unwrap();
-    let our_enr = NodeRecord::from_secret_key(DEFAULT_DISCOVERY_ADDRESS, &our_key);
+    println!("{:?}", *BOOT_NODES);
+    for node in BOOT_NODES.iter() {
+        peers_tx
+            .send(SocketAddr::new(node.address, node.tcp_port))
+            .unwrap();
+    }
+
+    let secret_key = if let Some(private_key) = &ARGS.private_key {
+        SecretKey::from_str(&private_key).unwrap()
+    } else {
+        generate_keypair(&mut rand::thread_rng()).0
+    };
+    let mut our_enr = NodeRecord::from_secret_key(
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, ARGS.udp_port)),
+        &secret_key,
+    );
+    our_enr.tcp_port = ARGS.tcp_port;
 
     let mut discv4_cfg = Discv4ConfigBuilder::default();
     discv4_cfg
         .add_boot_nodes(BOOT_NODES.clone())
         .lookup_interval(Duration::from_secs(1));
 
-    let discv4 = Discv4::spawn(our_enr.udp_addr(), our_enr, our_key, discv4_cfg.build()).await?;
+    let discv4 = Discv4::spawn(our_enr.udp_addr(), our_enr, secret_key, discv4_cfg.build()).await?;
     let mut discv4_stream = discv4.update_stream().await?;
 
     while let Some(update) = discv4_stream.next().await {
-        tokio::spawn(async move {
-            if let DiscoveryUpdate::Added(peer) = update {
+        match update {
+            DiscoveryUpdate::Added(peer) => {
                 println!("New node: {:?}", peer);
                 if BOOT_NODES_DICT.contains(&peer) {
-                    return;
+                    continue;
+                }
+
+                if let Err(_) = peers_tx.send(SocketAddr::new(peer.address, peer.tcp_port)) {
+                    break;
                 }
             }
-        });
+            DiscoveryUpdate::DiscoveredAtCapacity(_) => {}
+            DiscoveryUpdate::EnrForkId(_, _) => {}
+            DiscoveryUpdate::Removed(_) => {}
+            DiscoveryUpdate::Batch(_) => {}
+        }
     }
+
+    println!("Stopped");
 
     Ok(())
 }

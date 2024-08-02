@@ -1,0 +1,27 @@
+services:
+  boot-node:
+    image: aplo-node
+    ports:
+      - "33533"
+    networks:
+      nodes:
+        ipv4_address: 10.5.0.5
+    command: --ip-address 10.5.0.5
+
+  node-1:
+    image: aplo-node
+    ports:
+      - "33533"
+    networks:
+      nodes:
+        ipv4_address: 10.5.0.6
+    command: --ip-address 10.5.0.6
+
+
+networks:
+  nodes:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.5.0.0/16
+         gateway: 10.5.0.1

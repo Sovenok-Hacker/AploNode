@@ -27,6 +27,7 @@ pub struct Node {
     connected: Arc<RwLock<HashSet<SocketAddr>>>,
     stop: CancellationToken,
     timeout: Duration,
+    outer_ip: IpAddr,
 }
 
 impl Node {
@@ -34,6 +35,7 @@ impl Node {
         blockchain: Arc<BlockChainTree>,
         timeout: Duration,
         stop: CancellationToken,
+        outer_ip: IpAddr,
     ) -> Self {
         Self {
             blockchaintree: blockchain,
@@ -41,10 +43,12 @@ impl Node {
             connected: Default::default(),
             stop,
             timeout,
+            outer_ip,
         }
     }
 
     pub async fn start(self, mut peers_rx: UnboundedReceiver<SocketAddr>, port: u16) -> Result<()> {
+        println!("Starting node");
         let self_cloned = self.clone();
         tokio::spawn(async move {
             let stop = self_cloned.stop.clone();
@@ -54,14 +58,13 @@ impl Node {
                         break;
                     }
                     peer = peers_rx.recv() => {
+                        println!("Got propagated peer: {:?}", peer);
                         if let Some(peer) = peer {
-                            if self_cloned.connected.read().await.get(&peer).is_some(){
+                            if self_cloned.connected.read().await.get(&peer).is_some() || peer.ip() == self.outer_ip{
                                 continue;
                             }
                             let self_cloned = self_cloned.clone();
-                            tokio::spawn(
-                                async move { (self_cloned.clone()).peer_connect(peer) },
-                            );
+                            tokio::spawn((self_cloned.clone()).peer_connect(peer));
                         }else{
                             break;
                         }
@@ -96,7 +99,8 @@ impl Node {
         Ok(())
     }
 
-    async fn peer_connect(self, address: SocketAddr) -> Result<()> {
+    pub async fn peer_connect(self, address: SocketAddr) -> Result<()> {
+        println!("Connect to peer: {:?}", address);
         select! {
                 _ = self.stop.cancelled() => {
                     Ok(())
@@ -150,9 +154,11 @@ impl Node {
 
     pub async fn peer_handler(self, socket: TcpStream, address: SocketAddr) -> Result<()> {
         if !self.connected.write().await.insert(address) {
+            println!("Peer: {} exists", address);
             return Ok(());
         }
 
+        println!("Established connection with: {}", address);
         let (read, write) = socket.into_split();
         let mut writer = FramedWrite::new(write, codec::PacketEncoder {});
         let reader = FramedRead::new(read, codec::PacketDecoder {});
