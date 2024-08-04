@@ -24,7 +24,7 @@ use txpool::TxPool;
 pub struct Node {
     blockchaintree: Arc<BlockChainTree>,
     tx_pool: Arc<RwLock<TxPool>>,
-    connected: Arc<RwLock<HashSet<SocketAddr>>>,
+    connected: Arc<RwLock<HashSet<IpAddr>>>,
     stop: CancellationToken,
     timeout: Duration,
     outer_ip: IpAddr,
@@ -60,7 +60,7 @@ impl Node {
                     peer = peers_rx.recv() => {
                         println!("Got propagated peer: {:?}", peer);
                         if let Some(peer) = peer {
-                            if !self_cloned.connected.write().await.insert(peer) || peer.ip() == self.outer_ip{
+                            if !self_cloned.connected.write().await.insert(peer.ip()) || peer.ip() == self.outer_ip{
                                 continue;
                             }
                             let self_cloned = self_cloned.clone();
@@ -85,7 +85,7 @@ impl Node {
                     println!("New connection received: {:?}", peer);
                     let peer = peer?;
 
-                    if !self.connected.write().await.insert(peer.1){
+                    if !self.connected.write().await.insert(peer.1.ip()){
                         continue;
                     }
 
