@@ -16,6 +16,8 @@ services:
       nodes:
         ipv4_address: 10.5.0.6
     command: --ip-address 10.5.0.6
+    depends_on: 
+      - boot-node
 
 
 networks:

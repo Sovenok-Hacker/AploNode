@@ -60,7 +60,7 @@ impl Node {
                     peer = peers_rx.recv() => {
                         println!("Got propagated peer: {:?}", peer);
                         if let Some(peer) = peer {
-                            if self_cloned.connected.read().await.get(&peer).is_some() || peer.ip() == self.outer_ip{
+                            if !self_cloned.connected.write().await.insert(peer) || peer.ip() == self.outer_ip{
                                 continue;
                             }
                             let self_cloned = self_cloned.clone();
@@ -82,7 +82,7 @@ impl Node {
                     break;
                 }
                 peer = stream.accept() => {
-
+                    println!("New connection received: {:?}", peer);
                     let peer = peer?;
 
                     if !self.connected.write().await.insert(peer.1){
@@ -94,13 +94,13 @@ impl Node {
             };
 
             let self_cloned = self.clone();
-            tokio::spawn(async move { self_cloned.peer_handler(socket, address) });
+            tokio::spawn(self_cloned.peer_handler(socket, address));
         }
         Ok(())
     }
 
     pub async fn peer_connect(self, address: SocketAddr) -> Result<()> {
-        println!("Connect to peer: {:?}", address);
+        println!("Connecting to peer: {:?}", address);
         select! {
                 _ = self.stop.cancelled() => {
                     Ok(())
@@ -131,6 +131,7 @@ impl Node {
         loop {
             let packet = select! {
                 _ = tokio::time::sleep(timeout) => {
+                    println!("Recv timeouted");
                     break;
                 }
                 _ = stop.cancelled() => {
@@ -140,6 +141,7 @@ impl Node {
                     if let Some(Ok(packet)) = packet{
                         packet
                     }else{
+                        println!("Error receiving packet {:?}", packet);
                         break;
                     }
                 }
@@ -153,10 +155,10 @@ impl Node {
     }
 
     pub async fn peer_handler(self, socket: TcpStream, address: SocketAddr) -> Result<()> {
-        if !self.connected.write().await.insert(address) {
-            println!("Peer: {} exists", address);
-            return Ok(());
-        }
+        //if !self.connected.write().await.insert(address) {
+        //    println!("Peer: {} exists", address);
+        //    return Ok(());
+        //}
 
         println!("Established connection with: {}", address);
         let (read, write) = socket.into_split();
@@ -166,16 +168,19 @@ impl Node {
         let (packet_tx, mut packet_rx) = unbounded_channel();
 
         let stop_token_clone = self.stop.clone();
-        tokio::spawn(async move {
-            Node::read_packets(packet_tx, reader, self.timeout, stop_token_clone)
-        });
+        tokio::spawn(Node::read_packets(
+            packet_tx,
+            reader,
+            self.timeout,
+            stop_token_clone,
+        ));
 
         writer
             .send(Packet::Request(Request::Ping { id: 0 }))
             .await?;
         loop {
             let packet = select! {
-                _ = tokio::time::sleep(self.timeout) => {
+                _ = tokio::time::sleep(self.timeout / 2) => {
                     writer
                         .send(Packet::Request(Request::Ping { id: 0 }))
                         .await?;
@@ -197,14 +202,20 @@ impl Node {
                 Packet::Request(r) => match r {
                     Request::Ping { id } => {
                         writer.send(Packet::Response(Response::Ping { id })).await?;
-                        println!("Recieved ping packet, sending ping ack back");
+                        println!("Recieved ping request: {}", id);
                     }
                     Request::GetBlock() => todo!(),
                     Request::GetTransaction() => todo!(),
                     Request::GetBlockTransactions() => todo!(),
                     Request::LatestBlock() => todo!(),
                 },
-                Packet::Response(_) => todo!(),
+                Packet::Response(r) => match r {
+                    Response::Ping { id } => println!("Got ping response: {}", id),
+                    Response::GetBlock() => todo!(),
+                    Response::GetTransaction() => todo!(),
+                    Response::GetBlockTransactions() => todo!(),
+                    Response::LatestBlock() => todo!(),
+                },
             }
         }
 
