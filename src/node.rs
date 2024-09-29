@@ -232,7 +232,7 @@ async fn exchange_keys(
     socket: &mut TcpStream,
 ) -> Result<([u8; 12], SharedSecret), node_errors::NodeError> {
     let mut buf = [0; 32];
-    let secret = EphemeralSecret::new(OsRng);
+    let secret = EphemeralSecret::random_from_rng(OsRng);
     let public = PublicKey::from(&secret);
 
     if let Err(e) = socket.write(public.as_bytes()).await {
@@ -330,9 +330,8 @@ async fn exchange_keys_client(
     socket: &mut TcpStream,
 ) -> Result<([u8; 12], SharedSecret), node_errors::NodeError> {
     let mut buf = [0; 32];
-    let secret = EphemeralSecret::new(OsRng);
+    let secret = EphemeralSecret::random_from_rng(OsRng);
     let public = PublicKey::from(&secret);
-
     if let Err(e) = socket.read_exact(&mut buf).await {
         return Err(node_errors::NodeError::new(e.to_string()));
     };

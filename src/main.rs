@@ -15,7 +15,7 @@ use tokio::time::{sleep, Duration};
 #[tokio::main]
 async fn main() -> errors::ResultSmall<()> {
     // load .env file
-    dotenv::dotenv().expect("Failed to read .env file");
+    dotenvy::dotenv().expect("Failed to read .env file");
 
     // configure channels
     let (tx, mut rx) = broadcast::channel::<u8>(1);
